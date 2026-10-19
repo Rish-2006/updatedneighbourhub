@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "18403408915",
+    "project_id": "neighbourhub-c0dfc",
+    "storage_bucket": "neighbourhub-c0dfc.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:18403408915:android:2525d1c67e60eefaba93e6",
+        "android_client_info": {
+          "package_name": "com.neighbourhub.neighbour_hub"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDQrI0wv7DNXVUO0bLqmJ7DMWgfgwy1p64"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

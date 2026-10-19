@@ -1,0 +1,162 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /posts/{postId} {
+      // Anyone logged in can read posts
+      allow read: if request.auth != null;
+      // Anyone logged in can create a post, as long as they set themselves as the userId
+      allow create: if request.auth != null && request.auth.uid == request.resource.data.userId;
+      // Only the author can update the post contents.
+      // Other authenticated users can only update the engagement counters (likes/comments).
+      allow update: if request.auth != null && (
+        request.auth.uid == resource.data.userId ||
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['likesCount', 'likedBy', 'commentsCount'])
+      );
+      allow delete: if request.auth != null && request.auth.uid == resource.data.userId;
+    }
+    
+    match /comments/{commentId} {
+      // Anyone logged in can read comments
+      allow read: if request.auth != null;
+      // Anyone logged in can create a comment, provided they set themselves as the authorId
+      allow create: if request.auth != null && request.auth.uid == request.resource.data.authorId;
+      // Only the author can update or delete their comment
+      allow update, delete: if request.auth != null && request.auth.uid == resource.data.authorId;
+    }
+    
+    match /lost_found/{itemId} {
+      // Anyone logged in can read items
+      allow read: if request.auth != null;
+      // Anyone logged in can create an item as themselves
+      allow create: if request.auth != null && request.auth.uid == request.resource.data.postedById;
+      // Only the poster can update status; others cannot tamper with it directly
+      allow update: if request.auth != null && request.auth.uid == resource.data.postedById;
+      allow delete: if request.auth != null && request.auth.uid == resource.data.postedById;
+    }
+    
+    match /lost_found_claims/{claimId} {
+      // Item owner or claimant can read the claim
+      allow read: if request.auth != null && (
+        request.auth.uid == resource.data.itemOwnerId ||
+        request.auth.uid == resource.data.claimantId
+      );
+      // Authenticated users can create a claim as themselves
+      allow create: if request.auth != null && request.auth.uid == request.resource.data.claimantId;
+      // Only the item owner can update the claim status (accept/reject)
+      allow update: if request.auth != null && request.auth.uid == resource.data.itemOwnerId;
+    }
+    
+    match /connectionRequests/{requestId} {
+      allow read: if request.auth != null && (request.auth.uid == resource.data.senderId || request.auth.uid == resource.data.receiverId);
+      allow create: if request.auth != null && request.auth.uid == request.resource.data.senderId && request.resource.data.senderId != request.resource.data.receiverId;
+      allow update: if request.auth != null && request.auth.uid == resource.data.receiverId;
+    }
+    
+    match /connections/{connectionId} {
+      allow read: if request.auth != null && (request.auth.uid == resource.data.user1Id || request.auth.uid == resource.data.user2Id);
+      allow create: if request.auth != null && (request.auth.uid == request.resource.data.user1Id || request.auth.uid == request.resource.data.user2Id);
+      allow delete: if request.auth != null && (request.auth.uid == resource.data.user1Id || request.auth.uid == resource.data.user2Id);
+    }
+    
+    // ─── Announcements ────────────────────────────────────────────────────────
+    // Admin-only write; all authenticated users can read.
+    match /announcements/{announcementId} {
+      // Any logged-in user can read announcements
+      allow read: if request.auth != null;
+
+      // Only the admin email can create, update, or delete announcements
+      allow create, update, delete: if request.auth != null
+          && request.auth.token.email == 'srimadhu6521@gmail.com';
+    }
+
+    // ─── Flat Verification Requests ────────────────────────────────────────────
+    // Users can create/read their own requests. Only admin can approve/reject.
+    match /flat_verification_requests/{requestId} {
+      // Any authenticated user can read (needed for admin dashboard stream)
+      allow read: if request.auth != null;
+
+      // Users can only create a request for themselves
+      allow create: if request.auth != null
+          && request.auth.uid == request.resource.data.userId;
+
+      // Users can cancel their own pending request (status -> Cancelled)
+      allow update: if request.auth != null && (
+        // Admin can update any field (approve/reject)
+        request.auth.token.email == 'srimadhu6521@gmail.com'
+        ||
+        // User can only update their own request to Cancelled
+        (request.auth.uid == resource.data.userId
+          && request.resource.data.status == 'Cancelled'
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status']))
+      );
+    }
+
+    // ─── Flat Assignments ──────────────────────────────────────────────────────
+    // Admin manages assignments. Users can read to check availability.
+    match /flat_assignments/{flatNumber} {
+      // Any authenticated user can read (check if flat is taken)
+      allow read: if request.auth != null;
+
+      // Only admin can write assignments
+      allow write: if request.auth != null
+          && request.auth.token.email == 'srimadhu6521@gmail.com';
+    }
+
+    // ─── Users collection — flat fields ───────────────────────────────────────
+    // Users can update only specific non-verification fields on their own doc.
+    // Verification status (flatVerificationStatus, flatVerifiedAt) must only
+    // be set by admin or via Cloud Functions. The catch-all below allows writes
+    // for prototyping; tighten this rule in production.
+    match /users/{userId} {
+      allow read: if request.auth != null;
+      // Allow users to write their own doc (profile edits, flat requests)
+      // but NOT to self-approve (flatVerificationStatus = 'Verified' requires admin flow)
+      allow write: if request.auth != null && (
+        request.auth.uid == userId ||
+        request.auth.token.email == 'srimadhu6521@gmail.com'
+      );
+    }
+
+    // ─── Service Providers ─────────────────────────────────────────────────────
+    // Any authenticated user can read. Only admin can write.
+    match /service_providers/{providerId} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null
+          && request.auth.token.email == 'srimadhu6521@gmail.com';
+    }
+
+    // ─── Events & Registrations ────────────────────────────────────────────────
+    match /events/{eventId} {
+      allow read: if request.auth != null;
+      allow create, delete: if request.auth != null && 
+        (request.auth.token.email == 'srimadhu6521@gmail.com' || request.auth.token.email == 'admin@gmail.com');
+      // Anyone can update the participants array (when joining)
+      allow update: if request.auth != null && 
+        (
+          request.auth.token.email == 'srimadhu6521@gmail.com' || 
+          request.auth.token.email == 'admin@gmail.com' ||
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['participants'])
+        );
+    }
+    
+    match /event_registrations/{registrationId} {
+      // Normal users can read their own registrations. Admin can read all.
+      allow read: if request.auth != null && (
+        request.auth.uid == resource.data.userId || 
+        request.auth.token.email == 'srimadhu6521@gmail.com' || 
+        request.auth.token.email == 'admin@gmail.com'
+      );
+      // Users can only register themselves
+      allow create: if request.auth != null && request.auth.uid == request.resource.data.userId;
+      // Admin can delete registrations (when deleting an event)
+      allow delete: if request.auth != null && 
+        (request.auth.token.email == 'srimadhu6521@gmail.com' || request.auth.token.email == 'admin@gmail.com');
+    }
+
+    // Other collections fall back to default rules or block everything
+    match /{document=**} {
+      allow read, write: if request.auth != null; // Allowing other features (users, etc) to work if they use Firestore
+    }
+  }
+}
